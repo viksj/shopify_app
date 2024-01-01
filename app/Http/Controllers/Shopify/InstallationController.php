@@ -4,12 +4,16 @@ namespace App\Http\Controllers\Shopify;
 
 
 use Exception;
+use App\Models\User;
+use Illuminate\Support\Str;
 use App\Traits\RequestTrait;
 use Illuminate\Http\Request;
 use App\Models\Shopify\Store;
 use App\Traits\FunctionTrait;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
+use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Redirect;
 
 class InstallationController extends Controller
@@ -102,8 +106,10 @@ class InstallationController extends Controller
 
                         if ($saveDetails) {
                             //At this point the installation process is complete.
+                            // Session::flash('success', 'Installation for your store '.$saveDetails['name'].' has completed. Please Login');
                             // return Redirect::to(route('app_install_complete'));
-                            return Redirect::to(config('app.ngrok_url').'shopify/auth/complete');
+                            // return Redirect::to(config('app.ngrok_url').'shopify/auth/complete');
+                            return Redirect::route('login');
                         } else {
                             \Log::info('Problem during saving shop details into the db');
                             \Log::info($saveDetails);
@@ -138,7 +144,22 @@ class InstallationController extends Controller
                 'checkout_api_supported' => $shopDetails['checkout_api_supported'],
             ];
             // dd(print_r($payload, true));
-            Store::updateOrCreate(['myshopify_domain' => $shopDetails['myshopify_domain']], $payload);
+            $store_db = Store::updateOrCreate(['myshopify_domain' => $shopDetails['myshopify_domain']], $payload);
+            $random_password = Str::random(10);
+             \Log::info('Password generated : '.$random_password);
+            $user_payload = [
+                'name' => $shopDetails['myshopify_domain'],
+                'email' => $shopDetails['email'],
+                'password' => $random_password,
+                'store_id' => $store_db->table_id,
+                'email_verified_at' => date('Y-m-d h:i:s')
+            ];
+
+            $user = User::updateOrCreate(['email' => $shopDetails['email']], $user_payload);
+            $user->markEmailAsVerified(); // To make this user verified witout requiring them to.
+            Session::flash('success', 'Installation for your store '.$shopDetails['name'].' has completed and the credentiials have been send to '.$shopDetails['email'].' Please Login');
+            //Send the credentials on the register email address on Shopify.
+            // Mail::to($shopDetails['email'])->send(new \App\Mail\InstallComplete($user_payload, $random_password));
             return true;
         } catch (\Exception $e) {
             //throw $th;
